@@ -37,6 +37,11 @@ func (r *ServiceAccountReconciler) Reconcile(ctx context.Context, request reconc
 
 	l := r.Log.WithValues("serviceAccount", request.NamespacedName)
 
+	if request.Name != defaultServiceAccountName {
+		l.Info("Skip patching, as name does not match " + defaultServiceAccountName)
+		return reconcile.Result{}, nil
+	}
+
 	err := r.Client.Get(ctx, request.NamespacedName, sa)
 
 	if err != nil && errors.IsNotFound(err) {
@@ -49,11 +54,6 @@ func (r *ServiceAccountReconciler) Reconcile(ctx context.Context, request reconc
 	}
 
 	l.Info("Reconciling service account")
-
-	if request.Name != defaultServiceAccountName {
-		l.Info("Skip patching, as name does not match " + defaultServiceAccountName)
-		return reconcile.Result{}, nil
-	}
 
 	if err := r.patchServiceAccount(ctx, sa, []byte(serviceAccountPatch)); err != nil {
 		l.Error(err, "failed to patch service account")
