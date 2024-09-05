@@ -3,7 +3,7 @@
 set -euo pipefail
 
 # Download and setup binaries required by envtest https://book.kubebuilder.io/reference/envtest.html
-curl -sSLo envtest-bins.tar.gz "https://storage.googleapis.com/kubebuilder-tools/kubebuilder-tools-1.25.0-linux-amd64.tar.gz"
+curl -sSLo envtest-bins.tar.gz "https://storage.googleapis.com/kubebuilder-tools/kubebuilder-tools-1.30.0-linux-amd64.tar.gz"
 rm -rf ~/envtest-binaries
 mkdir -p ~/envtest-binaries
 tar -zvxf envtest-bins.tar.gz

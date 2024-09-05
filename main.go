@@ -1,16 +1,20 @@
-/*
-
- */
-
 package main
 
 import (
+	"context"
 	"fmt"
 	"os"
 
 	"github.com/prit342/disable-automount-default-sa-controller/controllers"
+	"k8s.io/apimachinery/pkg/types"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
+	"sigs.k8s.io/controller-runtime/pkg/builder"
+	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
+	"sigs.k8s.io/controller-runtime/pkg/manager"
+	"sigs.k8s.io/controller-runtime/pkg/predicate"
+	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -18,11 +22,14 @@ import (
 	_ "k8s.io/client-go/plugin/pkg/client/auth/gcp"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/manager/signals"
+
+	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 )
 
 var (
-	scheme   = runtime.NewScheme()
-	setupLog = ctrl.Log.WithName("setup")
+	scheme                    = runtime.NewScheme()
+	setupLog                  = ctrl.Log.WithName("setup")
+	defaultServiceAccountName = `default`
 )
 
 func init() {
@@ -31,7 +38,7 @@ func init() {
 
 func main() {
 
-	ctrl.SetLogger(zap.New(zap.UseDevMode(true)))
+	ctrl.SetLogger(zap.New(zap.UseDevMode(false)))
 
 	electionNamesapce := os.Getenv("CONTROLLER_NAMESPACE")
 
@@ -40,17 +47,19 @@ func main() {
 		os.Exit(1)
 	}
 
-	mgr, err := ctrl.NewManager(ctrl.GetConfigOrDie(), ctrl.Options{
-		MetricsBindAddress:            "0.0.0.0:8080",
+	mgr, err := ctrl.NewManager(ctrl.GetConfigOrDie(), manager.Options{
+		Metrics: metricsserver.Options{
+			SecureServing: false,
+			BindAddress:   "0.0.0.0:8080",
+		},
 		Scheme:                        scheme,
 		LeaderElection:                true,
-		LeaderElectionID:              "a0ea520e-sa-controller",
+		LeaderElectionID:              "a0ea523r0e-default-sa-controller",
 		LeaderElectionNamespace:       electionNamesapce,
 		LeaderElectionReleaseOnCancel: true,
 	})
 
-	// setup logger for the controllers
-
+	// if we failed to setup the manager
 	if err != nil {
 		setupLog.Error(err, "unable to set up the controllers manager")
 		os.Exit(1)
@@ -62,10 +71,43 @@ func main() {
 		Scheme: mgr.GetScheme(),
 	}
 
-	// set up a new Controller that watches serviceAccount and reconciles them
+	// isDefaultServiceAccount is a predicate function that
+	// returns true if the object is a service account and is named "default"
+	isDefaultServiceAccount := func(obj client.Object) bool {
+		sa, ok := obj.(*corev1.ServiceAccount)
+		if !ok {
+			return false
+		}
+		return sa.Name == defaultServiceAccountName
+	}
 
+	// When a Namespace event occurs, this function returns a reconcile request for the default
+	// ServiceAccount in that namespace.
+	findDefaultServiceAccount := func(ctx context.Context, obj client.Object) []reconcile.Request {
+		namespace, ok := obj.(*corev1.Namespace)
+		if !ok {
+			r.Log.Error(nil, "Expected a Namespace but got something else")
+			return nil
+		}
+
+		return []reconcile.Request{
+			{
+				NamespacedName: types.NamespacedName{
+					Name:      defaultServiceAccountName,
+					Namespace: namespace.GetName(),
+				},
+			},
+		}
+	}
+	// set up a new Controller that watches serviceAccount and reconciles them
 	err = ctrl.NewControllerManagedBy(mgr).
-		For(&corev1.ServiceAccount{}).
+		For(&corev1.ServiceAccount{}, // watch serviceaccount resources
+			// add a predicate to filter only default service accounts
+			builder.WithPredicates(predicate.NewPredicateFuncs(isDefaultServiceAccount))).
+		Watches(
+			&corev1.Namespace{},
+			handler.EnqueueRequestsFromMapFunc(findDefaultServiceAccount),
+		).
 		Complete(r)
 
 	if err != nil {

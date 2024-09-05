@@ -20,13 +20,13 @@ make tests
 
 ## Deploying the controller in a local Kind cluster
 
-- You can build and run the controller in the local kind cluster using the following commands:
+- You can build and run the controller in a local kind cluster using the following make target:
 
 ```bash
   make kind
 ```
 
-- The above command will create a new Kind cluster called `demo` based on kubernetes version `1.25.0` and will build and import the Docker image into the Kind nodes
+- The above command will create a new Kind cluster called `demo` based on kubernetes version `1.30.0` and will build and import the Docker image into the Kind nodes
 
 - Once the docker image is loaded into the Kind cluster, you can run it as a Kubernetes deployment using the following make target:
 

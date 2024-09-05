@@ -3,8 +3,8 @@ apiVersion: v1
 kind: Namespace
 metadata:
   labels:
-    kubernetes.io/metadata.name: disable-automount-default-sa-controller-ns
-  name: disable-automount-default-sa-controller-ns
+    kubernetes.io/metadata.name: disable-automount-default-sa-controller
+  name: disable-automount-default-sa-controller
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
@@ -13,13 +13,16 @@ metadata:
 rules:
 - apiGroups: [""]
   resources: ["serviceaccounts"]
-  verbs: ["get", "patch", "list"]
+  verbs: ["get", "patch", "list", "watch"]
+- apiGroups: [""]
+  resources: ["namespaces"]
+  verbs: ["get", "list", "watch"]
 ---
 apiVersion: v1
 kind: ServiceAccount
 metadata:
   name: disable-automount-default-sa-controller-sa
-  namespace: disable-automount-default-sa-controller-ns
+  namespace: disable-automount-default-sa-controller
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
@@ -32,13 +35,13 @@ roleRef:
 subjects:
   - kind: ServiceAccount
     name: disable-automount-default-sa-controller-sa
-    namespace: disable-automount-default-sa-controller-ns
+    namespace: disable-automount-default-sa-controller
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
 metadata:
   name: disable-automount-default-sa-controller-lease-cr
-  namespace: disable-automount-default-sa-controller-ns
+  namespace: disable-automount-default-sa-controller
 rules:
   - apiGroups: ["coordination.k8s.io"]
     resources: ["leases"]
@@ -48,7 +51,7 @@ apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
 metadata:
   name: disable-automount-default-sa-controller-rb
-  namespace: disable-automount-default-sa-controller-ns
+  namespace: disable-automount-default-sa-controller
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: Role
@@ -56,13 +59,13 @@ roleRef:
 subjects:
   - kind: ServiceAccount
     name: disable-automount-default-sa-controller-sa
-    namespace: disable-automount-default-sa-controller-ns
+    namespace: disable-automount-default-sa-controller
 ---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: disable-automount-default-sa-controller
-  namespace: disable-automount-default-sa-controller-ns
+  namespace: disable-automount-default-sa-controller
   labels:
     app: disable-automount-default-sa-controller
 spec:
@@ -85,7 +88,7 @@ spec:
           imagePullPolicy: Never # this forces k8s to use local image that we loaded via kind
           env:
             - name: CONTROLLER_NAMESPACE
-              value: disable-automount-default-sa-controller-ns
+              value: disable-automount-default-sa-controller
           resources:
             requests:
               memory: 512Mi

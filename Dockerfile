@@ -1,4 +1,4 @@
-FROM golang:1.19 as builder
+FROM golang:1.23 as builder
 COPY . /build
 WORKDIR /build
 RUN go mod download

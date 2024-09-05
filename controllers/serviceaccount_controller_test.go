@@ -8,7 +8,7 @@ import (
 	. "github.com/onsi/gomega"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/types"
-	"k8s.io/utils/pointer"
+	"k8s.io/utils/ptr"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
@@ -46,7 +46,7 @@ var _ = Describe("ServiceAccountPatch controllers", func() {
 
 	Context("When default service account is created with AutomountServiceAccountToken set to false", func() {
 		It("should be patched successfully ", func() {
-			createAndCheckServiceAccount("default", "default", pointer.BoolPtr(true))
+			createAndCheckServiceAccount("default", "default", ptr.To(true))
 		})
 	})
 
@@ -57,7 +57,7 @@ var _ = Describe("ServiceAccountPatch controllers", func() {
 	})
 
 	Context("When fetching service account fails", func() {
-		It("should return an error ", func() {
+		It("should not return an error ", func() {
 			// Create a fake client with the given scheme.
 			fakeClient := fake.NewClientBuilder().WithScheme(testEnv.Scheme).Build()
 
@@ -72,6 +72,7 @@ var _ = Describe("ServiceAccountPatch controllers", func() {
 
 			// The fake client won't have any objects stored by default,
 			// so attempting to fetch any object will result in a "not found" error.
+			// if the object is not found then the reconciler should ignore it
 			_, err := reconciler.Reconcile(ctx, reconcile.Request{NamespacedName: types.NamespacedName{Name: "default", Namespace: "default"}})
 			Expect(err).ToNot(HaveOccurred()) // because if it doesn't find the SA, it's not an error as per the reconciler's logic.
 		})

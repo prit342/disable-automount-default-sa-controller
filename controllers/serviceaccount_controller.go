@@ -6,16 +6,17 @@ import (
 
 	"github.com/go-logr/logr"
 	corev1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/api/errors"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
-	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/utils/pointer"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 )
 
 const (
-	serviceAccountPatch       = `{"automountServiceAccountToken": false}` // the patch we will apply
-	defaultServiceAccountName = "default"                                 // the name of service account that we will patch with the above patch
+	defaultServiceAccountName = "default" // the name of service account that we will patch
 )
 
 // ServiceAccountReconciler - reconciles the default serviceAccount(s)
@@ -31,31 +32,29 @@ var _ reconcile.Reconciler = &ServiceAccountReconciler{}
 
 // Reconcile - Reconciles a service account in a namespace
 func (r *ServiceAccountReconciler) Reconcile(ctx context.Context, request reconcile.Request) (reconcile.Result, error) {
-	// set up a convenient log object, so we don't have to type request over and over again
-	// Fetch the service account from our local cache populated by the shared informer
-	sa := &corev1.ServiceAccount{}
-
-	l := r.Log.WithValues("serviceAccount", request.NamespacedName)
-
-	if request.Name != defaultServiceAccountName {
-		l.Info("Skip patching, as name does not match " + defaultServiceAccountName)
-		return reconcile.Result{}, nil
-	}
-
-	err := r.Client.Get(ctx, request.NamespacedName, sa)
-
-	if err != nil && errors.IsNotFound(err) {
-		l.Info("Could not find service account")
-		return reconcile.Result{}, nil
-	}
-
-	if err != nil {
-		return reconcile.Result{}, fmt.Errorf("could not fetch service account: %+v", err)
-	}
-
+	//
+	l := r.Log.WithValues("name", request.Name, "namespace", request.Namespace)
 	l.Info("Reconciling service account")
 
-	if err := r.patchServiceAccount(ctx, sa, []byte(serviceAccountPatch)); err != nil {
+	sa := &corev1.ServiceAccount{}
+
+	if request.Name != defaultServiceAccountName {
+		l.Info("Skip patching the service account, as name does not match to " + defaultServiceAccountName)
+		return reconcile.Result{}, nil
+	}
+
+	// Fetch the service account from our local cache populated by the shared informer
+	err := r.Client.Get(ctx, request.NamespacedName, sa)
+	if err != nil {
+		if apierrors.IsNotFound(err) {
+			l.Info("ServiceAccount not found, it may not have been created yet or it was deleted")
+			return reconcile.Result{}, nil // Don't requeue
+		}
+		l.Error(err, "Failed to get ServiceAccount")
+		return reconcile.Result{}, err
+	}
+
+	if err := r.applyServiceAccountPatch(ctx, sa.Name, sa.Namespace); err != nil {
 		l.Error(err, "failed to patch service account")
 		return reconcile.Result{}, err
 	}
@@ -64,10 +63,22 @@ func (r *ServiceAccountReconciler) Reconcile(ctx context.Context, request reconc
 	return reconcile.Result{}, nil
 }
 
-// patchServiceAccount - patches a kubernetes service account with supplied patchData
-func (r *ServiceAccountReconciler) patchServiceAccount(ctx context.Context, saObj *corev1.ServiceAccount, patchData []byte) error {
+// applyServiceAccountPatch applies the desired state to the ServiceAccount using server-side apply
+func (r *ServiceAccountReconciler) applyServiceAccountPatch(ctx context.Context, name, namespace string) error {
 
-	l := r.Log.WithValues("name", saObj.Name, "namespace", saObj.Namespace)
+	l := log.FromContext(ctx)
+
+	sa := &corev1.ServiceAccount{
+		TypeMeta: metav1.TypeMeta{
+			APIVersion: "v1",
+			Kind:       "ServiceAccount",
+		},
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      name,
+			Namespace: namespace,
+		},
+		AutomountServiceAccountToken: pointer.Bool(false),
+	}
 
 	defer func() {
 		if r := recover(); r != nil {
@@ -75,19 +86,19 @@ func (r *ServiceAccountReconciler) patchServiceAccount(ctx context.Context, saOb
 		}
 	}()
 
-	// if automountServiceAccountToken is already set to false then we
-	// do not need to patch it
-	if saObj.AutomountServiceAccountToken != nil && !*saObj.AutomountServiceAccountToken {
-		l.Info("skip patching as automountServiceAccountField is already set to false")
-		return nil
-	}
+	// Apply the ServiceAccount using server-side apply
+	err := r.Patch(ctx, sa, client.Apply, &client.PatchOptions{
+		FieldManager: "disable-automount-default-sa-controller ",
+		// force option allows the apply operation to overwrite fields that are managed by
+		// other controllers or processes.
+		Force: pointer.Bool(true),
+	})
 
-	saPatch := client.RawPatch(types.StrategicMergePatchType, patchData)
-
-	if err := r.Client.Patch(ctx, saObj, saPatch); err != nil {
-		l.Error(err, "failed to patch service account")
+	if err != nil {
+		l.Error(err, "Failed to apply service account patch")
 		return err
 	}
 
+	l.Info("Successfully applied ServiceAccount patch")
 	return nil
 }

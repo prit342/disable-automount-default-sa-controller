@@ -1,4 +1,4 @@
-KUBEBUILDER_VERSION := 1.28.0
+KUBEBUILDER_VERSION := 1.30.0
 KUBEBUILDER_ASSETS := ~/envtest-binaries/kubebuilder/bin
 
 .PHONY: help setup-envtest build build-binary tests kind-create-cluster
@@ -24,14 +24,10 @@ build: test build-binary build-image ## Build the application
 build-binary: ## Build the binary
 	go build -o controller main.go
 
-namespace: ## Create the required namespace
-	kubectl delete ns sa-controller --wait=true || true
-	kubectl create ns sa-controller
-
 run-binary: build-binary namespace ## Run the binary
 	CONTROLLER_NAMESPACE=sa-controller ./controller
 
-run: tests build-binary delete-manifest ## Run the application
+run-tests: tests build-binary delete-manifest ## Run the application
 
 test: setup-envtest ## Run the tests
 	SKIP_FETCH_TOOLS=1 ACK_GINKGO_DEPRECATIONS=1.16.5 KUBEBUILDER_ASSETS=$(KUBEBUILDER_ASSETS) \
@@ -51,8 +47,6 @@ kind-load-image: ## Load docker image into the kind cluster
 build-image: ## Build the docker image
 	docker build . --tag=disable-automount-default-sa-controller:1.0.0 --no-cache
 
-all: tests build-image build-binary ## Run all steps
-
 tests: clean-envtest setup-envtest test ## Clean up, set up, and run tests
 
 clean-envtest: ## Clean up environment for testing
@@ -65,6 +59,9 @@ delete-manifest: ## Delete k8s manifests
 	kubectl delete -f manifests/deployment.yaml || true
 
 logs: ## View logs of the controller
-	kubectl logs -f -n disable-automount-default-sa-controller-ns -l app=controller
+	kubectl logs -f -n disable-automount-default-sa-controller -l app=controller
 
 deploy: delete-manifest apply-manifest ## Deploy the application
+
+run-in-kind-cluster: kind delete-manifest apply-manifest logs
+
