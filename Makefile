@@ -1,23 +1,24 @@
-KUBEBUILDER_VERSION := 1.30.0
-KUBEBUILDER_ASSETS := ~/envtest-binaries/kubebuilder/bin
 
-.PHONY: help setup-envtest build build-binary tests kind-create-cluster
+KUBEBUILDER_VERSION := 1.33.0
+KIND_CLUSTER_NAME := demo
+KIND_NODE_VERSION := 1.33.1
+
+# Point to local cache of envtest binaries, populated by setup-envtest tool
+KUBEBUILDER_ASSETS ?= $(shell echo $$HOME/.local/share/kubebuilder-envtest/k8s/$(KUBEBUILDER_VERSION)/bin)
+
+.PHONY: help build build-binary test setup-envtest clean-envtest kind-create-cluster
 
 .DEFAULT_GOAL := help
 
 help: ## Display this help message
 	awk 'BEGIN {FS = ":.*?## "} /^[a-zA-Z_-]+:.*?## / {printf "\033[36m%-30s\033[0m %s\n", $$1, $$2}' $(MAKEFILE_LIST)
 
-setup-envtest: ## Set up the environment for testing
-	# Download and setup binaries required by envtest https://book.kubebuilder.io/reference/envtest.html
-	curl -sSLo envtest-bins.tar.gz "https://storage.googleapis.com/kubebuilder-tools/kubebuilder-tools-$(KUBEBUILDER_VERSION)-linux-amd64.tar.gz"
-	rm -rf ~/envtest-binaries
-	mkdir -p ~/envtest-binaries
-	tar -zvxf envtest-bins.tar.gz
-	mv kubebuilder ~/envtest-binaries
-	ls -ltraR ~/envtest-binaries/kubebuilder/bin
-	rm -rf envtest-bins.tar.gz
-	echo $$KUBEBUILDER_ASSETS
+setup-envtest: ## Download envtest binaries and export KUBEBUILDER_ASSETS
+	# Install the setup-envtest tool (if not already installed).
+	go install "sigs.k8s.io/controller-runtime/tools/setup-envtest@latest"
+	# Use setup-envtest to download the Kubernetes control plane binaries (etcd, kube-apiserver, etc) for the specified version.
+	@eval "$$(setup-envtest use -p env $(KUBEBUILDER_VERSION))" && \
+	echo "KUBEBUILDER_ASSETS set to $$KUBEBUILDER_ASSETS"
 
 build: test build-binary build-image ## Build the application
 
@@ -27,30 +28,29 @@ build-binary: ## Build the binary
 run-binary: build-binary namespace ## Run the binary
 	CONTROLLER_NAMESPACE=sa-controller ./controller
 
-run-tests: tests build-binary delete-manifest ## Run the application
-
-test: setup-envtest ## Run the tests
-	SKIP_FETCH_TOOLS=1 ACK_GINKGO_DEPRECATIONS=1.16.5 KUBEBUILDER_ASSETS=$(KUBEBUILDER_ASSETS) \
-		go test -race -v ./... ./controllers/... -count=1 -args -ginkgo.v
+test: setup-envtest ## Run tests with KUBEBUILDER_ASSETS set
+	@eval "$$(setup-envtest use -p env $(KUBEBUILDER_VERSION))" && \
+	KUBEBUILDER_ASSETS=$$KUBEBUILDER_ASSETS go test -race -v ./controllers/... -count=1 -args -ginkgo.v
 
 kind: kind-delete-cluster kind-create-cluster build-image kind-load-image ## Manage kind cluster
 
 kind-delete-cluster: ## Delete the kind cluster
-	kind delete clusters demo || true
+	kind delete clusters $(KIND_CLUSTER_NAME) || true
 
 kind-create-cluster: ## Create a kind cluster
-	kind create cluster --name demo --config manifests/kind-config.yaml --image kindest/node:v$(KUBEBUILDER_VERSION)
+	kind create cluster --name $(KIND_CLUSTER_NAME) --config manifests/kind-config.yaml --image kindest/node:v$(KIND_NODE_VERSION)
+
 
 kind-load-image: ## Load docker image into the kind cluster
-	kind load docker-image disable-automount-default-sa-controller:1.0.0  --name demo
+	kind load docker-image disable-automount-default-sa-controller:1.0.0 --name $(KIND_CLUSTER_NAME)
 
 build-image: ## Build the docker image
-	docker build . --tag=disable-automount-default-sa-controller:1.0.0 --no-cache
+	docker build . --tag=disable-automount-default-sa-controller:1.0.0
 
-tests: clean-envtest setup-envtest test ## Clean up, set up, and run tests
+tests: test ## Run tests
 
 clean-envtest: ## Clean up environment for testing
-	rm -rfv ~/envtest-binaries/kubebuilder/bin
+	rm -rfv ~/.local/share/kubebuilder-envtest
 
 apply-manifest: ## Apply k8s manifests
 	kubectl apply -f manifests/deployment.yaml
@@ -62,6 +62,7 @@ logs: ## View logs of the controller
 	kubectl logs -f -n disable-automount-default-sa-controller -l app=controller
 
 deploy: delete-manifest apply-manifest ## Deploy the application
+
 
 run-in-kind-cluster: kind delete-manifest apply-manifest logs
 

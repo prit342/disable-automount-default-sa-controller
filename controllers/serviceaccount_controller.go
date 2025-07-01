@@ -9,7 +9,7 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
-	"k8s.io/utils/pointer"
+	"k8s.io/utils/ptr"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
@@ -77,7 +77,7 @@ func (r *ServiceAccountReconciler) applyServiceAccountPatch(ctx context.Context,
 			Name:      name,
 			Namespace: namespace,
 		},
-		AutomountServiceAccountToken: pointer.Bool(false),
+		AutomountServiceAccountToken: ptr.To(false),
 	}
 
 	defer func() {
@@ -88,10 +88,10 @@ func (r *ServiceAccountReconciler) applyServiceAccountPatch(ctx context.Context,
 
 	// Apply the ServiceAccount using server-side apply
 	err := r.Patch(ctx, sa, client.Apply, &client.PatchOptions{
-		FieldManager: "disable-automount-default-sa-controller ",
+		FieldManager: "disable-automount-default-sa-controller",
 		// force option allows the apply operation to overwrite fields that are managed by
 		// other controllers or processes.
-		Force: pointer.Bool(true),
+		Force: ptr.To(true),
 	})
 
 	if err != nil {

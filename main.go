@@ -1,20 +1,15 @@
 package main
 
 import (
-	"context"
 	"fmt"
 	"os"
 
 	"github.com/prit342/disable-automount-default-sa-controller/controllers"
-	"k8s.io/apimachinery/pkg/types"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
-	"sigs.k8s.io/controller-runtime/pkg/builder"
-	"sigs.k8s.io/controller-runtime/pkg/client"
-	"sigs.k8s.io/controller-runtime/pkg/handler"
+	"sigs.k8s.io/controller-runtime/pkg/event"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
-	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -71,43 +66,18 @@ func main() {
 		Scheme: mgr.GetScheme(),
 	}
 
-	// isDefaultServiceAccount is a predicate function that
-	// returns true if the object is a service account and is named "default"
-	isDefaultServiceAccount := func(obj client.Object) bool {
-		sa, ok := obj.(*corev1.ServiceAccount)
-		if !ok {
-			return false
-		}
-		return sa.Name == defaultServiceAccountName
-	}
-
-	// When a Namespace event occurs, this function returns a reconcile request for the default
-	// ServiceAccount in that namespace.
-	findDefaultServiceAccount := func(ctx context.Context, obj client.Object) []reconcile.Request {
-		namespace, ok := obj.(*corev1.Namespace)
-		if !ok {
-			r.Log.Error(nil, "Expected a Namespace but got something else")
-			return nil
-		}
-
-		return []reconcile.Request{
-			{
-				NamespacedName: types.NamespacedName{
-					Name:      defaultServiceAccountName,
-					Namespace: namespace.GetName(),
-				},
-			},
-		}
-	}
 	// set up a new Controller that watches serviceAccount and reconciles them
 	err = ctrl.NewControllerManagedBy(mgr).
-		For(&corev1.ServiceAccount{}, // watch serviceaccount resources
-			// add a predicate to filter only default service accounts
-			builder.WithPredicates(predicate.NewPredicateFuncs(isDefaultServiceAccount))).
-		Watches(
-			&corev1.Namespace{},
-			handler.EnqueueRequestsFromMapFunc(findDefaultServiceAccount),
-		).
+		For(&corev1.ServiceAccount{}). // watch service accounts
+		WithEventFilter(predicate.Funcs{
+			CreateFunc: func(e event.CreateEvent) bool {
+				return e.Object.GetName() == defaultServiceAccountName
+			},
+			// Update returns true if the Update event should be processed
+			UpdateFunc: func(e event.UpdateEvent) bool {
+				return e.ObjectNew.GetName() == defaultServiceAccountName
+			},
+		}).
 		Complete(r)
 
 	if err != nil {

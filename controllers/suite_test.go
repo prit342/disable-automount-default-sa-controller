@@ -19,7 +19,7 @@ import (
 
 var (
 	cfg       *rest.Config
-	k8sClient client.Client // You'll be using this client in your tests.
+	k8sClient client.Client
 	testEnv   *envtest.Environment
 	ctx       context.Context
 	cancel    context.CancelFunc
@@ -28,18 +28,16 @@ var (
 func TestAPIs(t *testing.T) {
 	RegisterFailHandler(Fail)
 	RunSpecs(t, "Controller suite")
-
 }
 
 var _ = BeforeSuite(func() {
 	logf.SetLogger(zap.New(zap.WriteTo(GinkgoWriter), zap.UseDevMode(true)))
 
-	ctx, cancel = context.WithCancel(context.TODO())
+	ctx, cancel = context.WithCancel(context.Background())
 
 	By("bootstrapping test environment")
 	testEnv = &envtest.Environment{
 		ErrorIfCRDPathMissing: false,
-		BinaryAssetsDirectory: "~/envtest-binaries/kubebuilder/bin",
 	}
 
 	var err error

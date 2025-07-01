@@ -6,8 +6,11 @@ import (
 )
 
 // newServiceAccountObject - returns a new service account
-func newServiceAccountObject(name, namespace string,
-	automountServiceAccountToken *bool) *corev1.ServiceAccount {
+func newServiceAccountObject(
+	name string, // name of the serivce account
+	namespace string, // namespace of the service account
+	automountServiceAccountToken *bool,
+) *corev1.ServiceAccount {
 
 	sa := corev1.ServiceAccount{
 		TypeMeta: metav1.TypeMeta{
